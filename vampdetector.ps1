@@ -722,9 +722,8 @@ function Main {
         Export-JsonReport -Verified $p1.Verified -Unknown $p1.Unknown -Threats $threats
     }
     
-    Write-Host "   Scan Completed. Press any key to exit..." -ForegroundColor Gray
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    
+    Write-Host "   Scan Completed. Please review the verdict above and the screenshares will take apropriate action." -ForegroundColor Cyan
+    Write-Host "   Thank you for using Vamp Cheat Scanner. Stay safe and don't cheat!" -ForegroundColor Cyan
 }
 
 Main
