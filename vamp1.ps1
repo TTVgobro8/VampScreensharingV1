@@ -445,6 +445,7 @@ function Invoke-HiddenModFilesPhase {
 function Invoke-CommandHistoryPhase {
     Write-PhaseHeader -Text ("PHASE 10 / {0}  -  COMMAND HISTORY ANALYSIS" -f $script:Config.TotalPhases)
 
+    $since = (Get-Date).AddHours(-48)
     $suspiciousCommands = @(
         "powershell -enc", "cmd /c", "certutil -decode", "certutil -urlcache",
         "bitsadmin /transfer", "Invoke-WebRequest", "curl -o", "wget -O",
@@ -460,12 +461,27 @@ function Invoke-CommandHistoryPhase {
 
     $historyPath = Join-Path $env:USERPROFILE "AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt"
     if (Test-Path $historyPath) {
+        $historyFile = Get-Item -LiteralPath $historyPath -ErrorAction SilentlyContinue
         $lines = Get-Content -Path $historyPath -ErrorAction SilentlyContinue
         $suspicious = @()
         foreach ($line in $lines) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+
+            $lineTime = $null
+            $command = $line
+            if ($line -match '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}') {
+                try {
+                    $lineTime = [datetime]::Parse($line.Substring(0, 19))
+                    $command = $line.Substring(20).Trim()
+                } catch { }
+            }
+
+            if ($lineTime -and $lineTime -lt $since) { continue }
+            if (-not $lineTime -and $historyFile -and $historyFile.LastWriteTime -lt $since) { continue }
+
             foreach ($pattern in $suspiciousCommands) {
-                if ($line -like "*$pattern*" -or $line -match [regex]::Escape($pattern)) {
-                    $suspicious += [PSCustomObject]@{ Source = 'PowerShell'; Command = $line; Pattern = $pattern }
+                if ($command -like "*$pattern*" -or $command -match [regex]::Escape($pattern)) {
+                    $suspicious += [PSCustomObject]@{ Source = 'PowerShell'; Command = $command; Pattern = $pattern; Time = $lineTime }
                     break
                 }
             }
@@ -487,6 +503,7 @@ function Invoke-CommandHistoryPhase {
         $events = Get-WinEvent -LogName "Microsoft-Windows-ProcessCreation/Operational" -MaxEvents 100 -ErrorAction SilentlyContinue | Where-Object { $_.Id -eq 4688 }
         $cmdHits = @()
         foreach ($event in $events) {
+            if ($event.TimeCreated -lt $since) { continue }
             $message = $event.Message
             foreach ($pattern in $suspiciousCommands) {
                 if ($message -like "*$pattern*" -or $message -match [regex]::Escape($pattern)) {
@@ -758,6 +775,8 @@ function Invoke-BamParserPhase {
             if ($prop.Name -notmatch '^\\Device\\HarddiskVolume') { continue }
             $count++
             $exePath = $prop.Name
+            $exeName = [System.IO.Path]::GetFileName($exePath)
+            if ($exeName -ieq 'MeowDoomsdayFucker.exe') { continue }
             $matchedClient = $script:CheatClientNames | Where-Object { $exePath.ToLower() -like "*$($_.ToLower())*" }
             if ($matchedClient) {
                 Add-Finding "HIGH" "BamParser" ("Recently executed program matches known cheat-client name '{0}': {1}" -f $matchedClient[0], $exePath)
