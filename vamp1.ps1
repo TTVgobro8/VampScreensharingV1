@@ -289,19 +289,17 @@ function Write-Banner {
     Write-Host ""
     Write-DoubleBoxTop
     Write-DoubleBoxLine
-    Write-DoubleBoxLine -Text "__     __ _    __  __ ____"      -Color Red    -Align Center
-    Write-DoubleBoxLine -Text "\ \   / // \  |  \/  |  _ \"     -Color Red    -Align Center
-    Write-DoubleBoxLine -Text " \ \ / // _ \ | |\/| | |_) |"    -Color Red    -Align Center
-    Write-DoubleBoxLine -Text "  \ V // ___ \| |  | |  __/"     -Color Red    -Align Center
-    Write-DoubleBoxLine -Text "   \_//_/   \_\_|  |_|_|"        -Color Red    -Align Center
+    Write-DoubleBoxLine -Text " __     __ _    __  __ ____  "    -Color Red    -Align Center
+    Write-DoubleBoxLine -Text " \ \   / // \  |  \/  |  _ \  "    -Color Red    -Align Center
+    Write-DoubleBoxLine -Text "  \ \ / // _ \ | |\/| | |_) | "    -Color Red    -Align Center
+    Write-DoubleBoxLine -Text "   \ V // ___ \| |  | |  __/  "    -Color Red    -Align Center
+    Write-DoubleBoxLine -Text "    \_//_/   \_\_|  |_|_|     "    -Color Red    -Align Center
     Write-DoubleBoxLine
-    Write-DoubleBoxLine -Text "C H E A T   S C A N N E R" -Color White -Align Center
+    Write-DoubleBoxLine -Text "C H E A T   S C A N N E R    "    -Color White -Align Center
     Write-DoubleBoxLine
     Write-DoubleBoxDivider
     Write-DoubleBoxLine -Text ("Version         : {0}" -f $script:Config.Version) -Color Gray
     Write-DoubleBoxLine -Text ("Scan started     : {0}" -f (Get-Date)) -Color Gray
-    Write-DoubleBoxLine -Text ("Host / User      : {0} / {1}" -f $env:COMPUTERNAME, $env:USERNAME) -Color Gray
-    Write-DoubleBoxLine -Text ("Network usage    : read-only Modrinth hash lookup ONLY") -Color Cyan
     Write-DoubleBoxLine -Text ("Execution mode   : 100% local, no remote code ever run") -Color Cyan
     Write-DoubleBoxDivider
     Write-DoubleBoxLine -Text ("Severity legend  :  [X] HIGH    [!] MEDIUM    [i] INFO") -Color Gray
@@ -328,10 +326,10 @@ function Ensure-Administrator {
     $principal = [System.Security.Principal.WindowsPrincipal]::new([System.Security.Principal.WindowsIdentity]::GetCurrent())
     if (-not $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {
         Write-Host "`n" -ForegroundColor Red
-        Write-Host "============================================================" -ForegroundColor Red
-        Write-Host "  Administrator privileges are required to run this scanner." -ForegroundColor Red
-        Write-Host "  Please restart PowerShell as Administrator and retry." -ForegroundColor Red
-        Write-Host "============================================================" -ForegroundColor Red
+        Write-Host "============================================================" -ForegroundColor DarkGray
+        Write-Host " Administrator privileges are required to run this scanner." -ForegroundColor Red
+        Write-Host " Please restart PowerShell as Administrator and retry." -ForegroundColor Red
+        Write-Host "============================================================" -ForegroundColor DarkGray
         Write-Host "`n" -ForegroundColor Red
         exit 1
     }
