@@ -341,6 +341,12 @@ function Get-CurrentMinecraftProcess {
     return Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -match '^java(w)?$' } | Select-Object -First 1
 }
 
+function Get-MinecraftStartTime {
+    $mcProc = Get-CurrentMinecraftProcess
+    if ($mcProc) { return $mcProc.StartTime }
+    return $null
+}
+
 function Invoke-SystemCheckerPhase {
     Write-PhaseHeader -Text ("PHASE 1 / {0}  -  SYSTEM CHECKER" -f $script:Config.TotalPhases)
 
@@ -445,25 +451,29 @@ function Invoke-HiddenModFilesPhase {
 function Invoke-CommandHistoryPhase {
     Write-PhaseHeader -Text ("PHASE 10 / {0}  -  COMMAND HISTORY ANALYSIS" -f $script:Config.TotalPhases)
 
-    $since = (Get-Date).AddHours(-48)
+    $mcStart = Get-MinecraftStartTime
+    $since = if ($mcStart) { $mcStart } else { (Get-Date).AddHours(-48) }
+    Write-Host ("   Searching commands since: {0}" -f $since.ToString('yyyy-MM-dd HH:mm:ss')) -ForegroundColor Gray
+
     $suspiciousCommands = @(
         "powershell -enc", "cmd /c", "certutil -decode", "certutil -urlcache",
-        "bitsadmin /transfer", "Invoke-WebRequest", "curl -o", "wget -O",
+        "bitsadmin /transfer", "Start-BitsTransfer", "Invoke-WebRequest", "curl -o", "wget -O",
         "rundll32.exe", "regsvr32.exe", "mshta.exe", "wscript.exe", "cscript.exe",
-        "taskkill /f", "Stop-Process -Force", "Inject", "LoadLibrary", "VirtualAlloc",
-        "WriteProcessMemory", "netsh", "net use", "net user", "reg add",
-        "reg delete", "reg query", "bcdedit", "wmic", "wevtutil", "cipher", "sfc",
+        "taskkill /f", "Stop-Process -Force", "Get-Process", "Inject", "LoadLibrary", "VirtualAlloc",
+        "WriteProcessMemory", "netsh", "net use", "net user", "net localgroup", "net share",
+        "reg add", "reg delete", "reg query", "Set-ItemProperty", "Remove-ItemProperty", "New-ItemProperty",
+        "bcdedit", "wmic", "wevtutil", "cipher", "sfc", "chkdsk",
         "cheat", "hack", "inject", "bypass", "crack", "patch", "mod menu",
         "trainer", "esp", "aimbot", "wallhack", "attrib +h", "attrib +s",
         "cipher /e", "hidden", "stealth", "IEX", "Invoke-Expression", "DownloadString",
-        "DownloadFile", "FromBase64String"
+        "DownloadFile", "FromBase64String", "proxy", "tunnel", "socks"
     )
 
     $historyPath = Join-Path $env:USERPROFILE "AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt"
+    $suspiciousPS = @()
     if (Test-Path $historyPath) {
         $historyFile = Get-Item -LiteralPath $historyPath -ErrorAction SilentlyContinue
         $lines = Get-Content -Path $historyPath -ErrorAction SilentlyContinue
-        $suspicious = @()
         foreach ($line in $lines) {
             if ([string]::IsNullOrWhiteSpace($line)) { continue }
 
@@ -481,39 +491,53 @@ function Invoke-CommandHistoryPhase {
 
             foreach ($pattern in $suspiciousCommands) {
                 if ($command -like "*$pattern*" -or $command -match [regex]::Escape($pattern)) {
-                    $suspicious += [PSCustomObject]@{ Source = 'PowerShell'; Command = $command; Pattern = $pattern; Time = $lineTime }
+                    $suspiciousPS += [PSCustomObject]@{ Source = 'PowerShell'; Command = $command; Pattern = $pattern; Time = $lineTime }
                     break
                 }
             }
         }
-        if ($suspicious.Count -gt 0) {
-            Write-Host "   Suspicious PowerShell history commands found: $($suspicious.Count)" -ForegroundColor Yellow
-            foreach ($entry in $suspicious | Select-Object -First 10) {
-                Write-Host ("     * [{0}] {1}" -f $entry.Pattern, $entry.Command) -ForegroundColor DarkGray
-            }
-            Add-Finding "MEDIUM" "CommandHistory" ("Suspicious PowerShell history entries detected ($($suspicious.Count))")
-        } else {
-            Write-Host "   No suspicious PowerShell history entries found." -ForegroundColor Green
+    }
+
+    if ($suspiciousPS.Count -gt 0) {
+        Write-Host "   Suspicious PowerShell history commands found: $($suspiciousPS.Count)" -ForegroundColor Yellow
+        foreach ($entry in $suspiciousPS | Select-Object -First 10) {
+            Write-Host ("     * [{0}] {1}" -f $entry.Pattern, $entry.Command) -ForegroundColor DarkGray
         }
+        Add-Finding "MEDIUM" "CommandHistory" ("Suspicious PowerShell history entries detected ($($suspiciousPS.Count))")
+    } elseif (Test-Path $historyPath) {
+        Write-Host "   No suspicious PowerShell history entries found." -ForegroundColor Green
     } else {
         Write-Host "   PowerShell history file not found." -ForegroundColor DarkGray
     }
 
     try {
-        $events = Get-WinEvent -LogName "Microsoft-Windows-ProcessCreation/Operational" -MaxEvents 100 -ErrorAction SilentlyContinue | Where-Object { $_.Id -eq 4688 }
+        $events = Get-WinEvent -LogName "Microsoft-Windows-ProcessCreation/Operational" -MaxEvents 200 -ErrorAction SilentlyContinue | Where-Object { $_.Id -eq 4688 }
         $cmdHits = @()
         foreach ($event in $events) {
             if ($event.TimeCreated -lt $since) { continue }
             $message = $event.Message
-            foreach ($pattern in $suspiciousCommands) {
-                if ($message -like "*$pattern*" -or $message -match [regex]::Escape($pattern)) {
-                    $cmdHits += [PSCustomObject]@{ Source = 'CMD'; Time = $event.TimeCreated; Pattern = $pattern; Message = $message }
-                    break
+            $commandLine = ""
+            if ($message -match 'Command Line:\s*(.+?)\r?\n') {
+                $commandLine = $matches[1].Trim()
+            } elseif ($message -match 'Command Line:\s*(.+)$') {
+                $commandLine = $matches[1].Trim()
+            }
+
+            if (-not $commandLine) { $commandLine = $message }
+            if ($commandLine -and ($commandLine -like "*cmd.exe*" -or $commandLine -like "*command.com*" -or $commandLine -like "*powershell.exe*" -or $commandLine -like "*powershell -enc*")) {
+                foreach ($pattern in $suspiciousCommands) {
+                    if ($commandLine -like "*$pattern*" -or $commandLine -match [regex]::Escape($pattern)) {
+                        $cmdHits += [PSCustomObject]@{ Source = 'CMD'; Time = $event.TimeCreated; Pattern = $pattern; Command = $commandLine }
+                        break
+                    }
                 }
             }
         }
         if ($cmdHits.Count -gt 0) {
             Write-Host "   Suspicious process creation events found: $($cmdHits.Count)" -ForegroundColor Yellow
+            foreach ($hit in $cmdHits | Select-Object -First 10) {
+                Write-Host ("     * [{0}] {1}" -f $hit.Pattern, $hit.Command) -ForegroundColor DarkGray
+            }
             Add-Finding "MEDIUM" "CommandHistory" ("Suspicious process creation activity detected ($($cmdHits.Count))")
         } else {
             Write-Host "   No suspicious process creation events found." -ForegroundColor Green
@@ -914,6 +938,7 @@ function Write-SummaryReport {
     $actionableFindings = @($script:Findings | Where-Object { $_.Severity -ne "INFO" })
     $infoFindings       = @($script:Findings | Where-Object { $_.Severity -eq "INFO" })
 
+    Write-Host "   Summary of scan results:" -ForegroundColor White
     Write-StatLine "[OK] Verified mods (Modrinth)"  $Verified.Count Green
     Write-StatLine "[!] Unverified mods"           $Unknown.Count Yellow
     Write-StatLine "[X] Jar-level threats"         $Threats.Count Red
@@ -983,8 +1008,23 @@ function Write-OverallSummary {
 
     Write-VerdictBanner -Clean (-not $anyFlagged)
 
+    Write-Host ""
+    $totalHigh   = ($actionableFindings | Where-Object { $_.Severity -eq "HIGH" }).Count + ($Threats | Where-Object { $_.Risk -eq "HIGH" }).Count
+    $totalMedium = ($actionableFindings | Where-Object { $_.Severity -eq "MEDIUM" }).Count + ($Threats | Where-Object { $_.Risk -eq "MEDIUM" }).Count
+    $totalInfo   = $infoFindings.Count
+    $totalMods   = $Threats.Count
+    $totalSys    = $actionableFindings.Count
+
+    Write-Host "   VERDICT SUMMARY" -ForegroundColor White
+    Write-StatLine "Verdict status"           (if (-not $anyFlagged) { 'CLEAN' } else { 'CHEATING DETECTED' }) (if (-not $anyFlagged) { [ConsoleColor]::Green } else { [ConsoleColor]::Red })
+    Write-StatLine "Flagged mods"             $totalMods (if ($totalMods -eq 0) { [ConsoleColor]::Green } else { [ConsoleColor]::Red })
+    Write-StatLine "System-level indicators"   $totalSys (if ($totalSys -eq 0) { [ConsoleColor]::Green } else { [ConsoleColor]::Yellow })
+    Write-StatLine "High severity hits"       $totalHigh (if ($totalHigh -eq 0) { [ConsoleColor]::Green } else { [ConsoleColor]::Red })
+    Write-StatLine "Medium severity hits"     $totalMedium (if ($totalMedium -eq 0) { [ConsoleColor]::Green } else { [ConsoleColor]::Yellow })
+    Write-StatLine "Informational notes"      $totalInfo Gray
+    Write-Host ""
+
     if (-not $anyFlagged) {
-        Write-Host ""
         Write-Host "   [OK] No cheat clients, injectors, or suspicious activity were detected." -ForegroundColor Green
         if ($infoFindings.Count -gt 0) {
             Write-Host "   [i] A few informational-only notes were logged above (e.g. peripheral" -ForegroundColor DarkGray
