@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$ModsPath,
 
-    [Parameter(Mandatory = $false)]
+    [Parameter(Mandatory = $)]
     [switch]$ExportReport
 )
 
@@ -563,9 +563,13 @@ function Write-ProgressBar {
 
 function Add-Finding {
     param($Severity, $Module, $Detail)
-    # Record the finding for aggregation. Do not print immediately so we can
-    # present a single consolidated summary at the end of the scan.
-    $script:Findings.Add([PSCustomObject]@{ Time = (Get-Date); Severity = $Severity; Module = $Module; Detail = $Detail })
+    $script:Findings.Add([PSCustomObject]@{ Severity = $Severity; Module = $Module; Detail = $Detail })
+    switch ($Severity) {
+        "HIGH"   { $color = "Red";    $icon = "[X]" }
+        "MEDIUM" { $color = "Yellow"; $icon = "[!]" }
+        default  { $color = "Gray";   $icon = "[i]" }
+    }
+    Write-Host ("     $icon [{0,-6}] {1}" -f $Severity, $Detail) -ForegroundColor $color
 }
 
 function Get-FileSHA1 {
@@ -574,76 +578,19 @@ function Get-FileSHA1 {
     catch { return $null }
 }
 
-function Write-FinalSummary {
-    param(
-        [Parameter(Mandatory=$false)] $Verified,
-        [Parameter(Mandatory=$false)] $Unknown,
-        [Parameter(Mandatory=$false)] $Threats
-    )
-
-    Write-PhaseHeader -Text "FINAL SUMMARY"
-
-    $all = if ($script:Findings) { $script:Findings } else { @() }
-
-    # Compute verdict
-    $high = ($all | Where-Object { $_.Severity -eq 'HIGH' }).Count
-    $med  = ($all | Where-Object { $_.Severity -eq 'MEDIUM' }).Count
-    $total = $all.Count
-
-    if ($high -gt 0) {
-        $verdict = 'CHEAT DETECTED'
-        $vColor = 'Red'
-        $recommend = 'Quarantine the detected files, stop play, and investigate processes immediately.'
-    } elseif ($med -gt 0) {
-        $verdict = 'SUSPICIOUS ACTIVITY'
-        $vColor = 'Yellow'
-        $recommend = 'Review the listed items and verify whether they are legitimate tools or false positives.'
-    } else {
-        $verdict = 'CLEAN'
-        $vColor = 'Green'
-        $recommend = 'No actionable threats found. Maintain usual security hygiene.'
-    }
-
-    Write-Host ""
-    Write-Host (("=" * 60)) -ForegroundColor $vColor
-    Write-Host ("  OVERALL VERDICT: {0}" -f $verdict) -ForegroundColor $vColor
-    Write-Host (("=" * 60)) -ForegroundColor $vColor
-    Write-Host ("   Summary: {0} finding(s) total — {1} HIGH, {2} MEDIUM" -f $total, $high, $med) -ForegroundColor Gray
-    Write-Host ("   Recommendation: {0}" -f $recommend) -ForegroundColor Cyan
-
-    Write-Host "" -ForegroundColor Gray
-
-    if ($all.Count -eq 0) {
-        Write-Host "   No findings were recorded during the scan." -ForegroundColor Green
-    } else {
-        $bySeverity = $all | Group-Object -Property Severity | Sort-Object {[array]::IndexOf(@('HIGH','MEDIUM','LOW','INFO'), $_.Name)}
-        foreach ($g in $bySeverity) {
-            $sev = $g.Name
-            $count = $g.Count
-            $color = switch ($sev) { 'HIGH' { 'Red' } 'MEDIUM' { 'Yellow' } default { 'Gray' } }
-            Write-Host ("   {0,7}: {1}" -f $sev, $count) -ForegroundColor $color
+function Get-ModrinthProject {
+    param([string]$Hash)
+    if (-not $Hash) { return $null }
+    try {
+        $versionUrl = "https://api.modrinth.com/v2/version_file/$Hash"
+        $versionData = Invoke-RestMethod -Uri $versionUrl -Method Get -UseBasicParsing -TimeoutSec 8 -ErrorAction Stop
+        if ($versionData.project_id) {
+            $projectUrl = "https://api.modrinth.com/v2/project/$($versionData.project_id)"
+            $projectData = Invoke-RestMethod -Uri $projectUrl -Method Get -UseBasicParsing -TimeoutSec 8 -ErrorAction Stop
+            return @{ Name = $projectData.title; Slug = $projectData.slug }
         }
-
-        Write-Host "" -ForegroundColor Gray
-        Write-Host "   Findings by module:" -ForegroundColor Gray
-        $byModule = $all | Group-Object -Property Module | Sort-Object Count -Descending
-        foreach ($m in $byModule) {
-            Write-Host ("     - {0}: {1}" -f $m.Name, $m.Count) -ForegroundColor DarkGray
-        }
-
-        Write-Host "" -ForegroundColor Gray
-        Write-Host "   Detailed findings (most recent first):" -ForegroundColor Gray
-        foreach ($f in ($all | Sort-Object -Property Time -Descending)) {
-            $t = if ($f.Time) { $f.Time.ToString('yyyy-MM-dd HH:mm:ss') } else { 'n/a' }
-            $sevColor = switch ($f.Severity) { 'HIGH' { 'Red' } 'MEDIUM' { 'Yellow' } default { 'Gray' } }
-            Write-Host ("     [{0}] {1} - {2} ({3})" -f $t, $f.Severity, $f.Detail, $f.Module) -ForegroundColor $sevColor
-        }
-    }
-
-    Write-Host "" -ForegroundColor Gray
-    Write-Host ("   Verified mods: {0}    Unknown mods: {1}    Threats: {2}" -f ($Verified.Count -as [int]), ($Unknown.Count -as [int]), ($Threats.Count -as [int])) -ForegroundColor Cyan
-    Write-Host "" -ForegroundColor Gray
-    Write-Host ("   Verified mods: {0}    Unknown mods: {1}    Threats: {2}" -f ($Verified.Count -as [int]), ($Unknown.Count -as [int]), ($Threats.Count -as [int])) -ForegroundColor Cyan
+    } catch { }
+    return $null
 }
 
 function Invoke-JarParserPhase {
@@ -1183,7 +1130,8 @@ function Main {
     Invoke-MacroToolScanPhase
     Invoke-CommandHistoryPhase
 
-    Write-FinalSummary -Verified $p1.Verified -Unknown $p1.Unknown -Threats $threats
+    Write-SummaryReport -Verified $p1.Verified -Unknown $p1.Unknown -Threats $threats
+    Write-OverallSummary -Threats $threats
 
     if ($ExportReport) {
         Export-JsonReport -Verified $p1.Verified -Unknown $p1.Unknown -Threats $threats
