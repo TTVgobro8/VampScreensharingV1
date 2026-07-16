@@ -1,50 +1,3 @@
-#Requires -Version 5.1
-
-<#
-.SYNOPSIS
-    Vamp Cheat Scanner - Local Minecraft cheat-client detection & mod verification toolkit.
-
-.DESCRIPTION
-    A fully transparent, local-first detection tool. Every check runs on your own
-    machine using built-in Windows/PowerShell commands. The ONE network call this
-    script makes is a read-only lookup against the public Modrinth API to check
-    whether a mod's hash matches a known, published project - it returns JSON
-    metadata only and never executes anything. Everything else is fully offline.
-
-    Modules:
-      Phase 1 - Jar Parser         : hashes mods, verifies against Modrinth, flags unknowns
-      Phase 2 - Deep Threat Scan   : scans unverified jars (incl. embedded jars) for
-                                     known cheat-client signatures
-      Phase 3 - Cheat Folder Scan  : checks %AppData%/%LocalAppData% for known
-                                     cheat-client/injector install folders (Wurst,
-                                     Impact, Meteor, Sigma, Ghost Client, Prestige, etc.)
-      Phase 4 - BAM Parser         : reads Background Activity Moderator execution history
-      Phase 5 - Services/Process   : flags known cheat-loader/injector process & service names
-      Phase 6 - Fileless Bypass    : reflective/in-memory load indicators on java.exe
-      Phase 7 - Macro/Automation   : flags autoclicker/macro tooling running anywhere on
-                                     the system (not just inside Minecraft)
-
-.PARAMETER ModsPath
-    Path to a mods folder. Defaults to %APPDATA%\.minecraft\mods if not supplied.
-
-.PARAMETER ExportReport
-    If set, writes a full JSON report to the Desktop after the scan completes.
-
-.EXAMPLE
-    powershell -ExecutionPolicy Bypass -File .\VampCheatScanner.ps1
-    powershell -ExecutionPolicy Bypass -File .\VampCheatScanner.ps1 -ExportReport
-
-.NOTES
-    Name       : Vamp Cheat Scanner
-    Version    : 3.1.0
-    Author     : ArchiveThomas
-    Credits    : Concept & detection ideas by Laffer
-    No third-party scripts, no Invoke-Expression, no remote code execution.
-    NOTE: This build uses plain ASCII characters only (no Unicode box-drawing
-    or emoji) so it renders correctly regardless of file encoding / console
-    codepage on the machine it runs on.
-#>
-
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
@@ -54,19 +7,12 @@ param(
     [switch]$ExportReport
 )
 
-# ============================================================================
-#  CONFIGURATION
-# ============================================================================
-
 $script:Config = @{
     AppName        = "Vamp Cheat Scanner"
-    Version        = "3.1.0"
-    Author         = "ArchiveThomas"
-    Credits        = "Laffer"
+    Version        = "3.0.0"
     DefaultModsPath = "$env:APPDATA\.minecraft\mods"
     TempDirName    = "vamp_cheatscanner_tmp"
     TotalPhases    = 7
-    BoxWidth       = 74
 }
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -78,30 +24,13 @@ try {
 $script:Findings = New-Object System.Collections.Generic.List[Object]
 $script:StartTime = Get-Date
 
-# ----------------------------------------------------------------------------
-#  SIGNATURE DATA
-# ----------------------------------------------------------------------------
-#
-# Signatures are split into two confidence tiers so we don't nuke someone's
-# entire mod folder because a legit mod's bytecode happens to contain a word
-# like "Speed" or "Fly" somewhere in a string table.
-#
-#   CheatClientNames  - distinctive, low-collision names of actual cheat
-#                        clients / injectors. A single hit on one of these is
-#                        treated as high confidence on its own.
-#   CheatFeatureWords  - generic "cheat module" style names (KillAura,
-#                        AutoClicker, ESP, etc.) that DO show up as class/
-#                        feature names inside real cheat clients, but could
-#                        theoretically collide with unrelated text. These are
-#                        matched with word boundaries and require multiple
-#                        distinct hits before being treated as high severity.
 
 $script:CheatClientNames = @(
     "wurst", "impact", "meteor-client", "meteorclient", "future-client",
     "sigma5", "sigma", "aristois", "rusherhack", "salhack", "kamiblue",
     "novoline", "flux-client", "fluxclient", "b0at", "vape", "liquidbounce",
     "wolfram", "clickcrystals", "doomsday",
-    # Injector-style / loader clients commonly reported on Minecraft servers
+
     "prestige", "ghostclient", "ghost-client", "riseclient", "rise-client",
     "onsetclient", "onset-client", "asyncclient", "async-client",
     "exhibitionclient", "exhibition-client", "expressionclient",
@@ -118,7 +47,6 @@ $script:CheatFeatureWords = @(
     "ShieldBreaker", "WebMacro", "AxeSpam", "ChestStealer", "Xray",
     "Nuker", "Freecam", "Fly", "Speed", "Velocity", "ESP", "Hitboxes"
 )
-# Words too generic to ever count alone (need 2+ distinct hits to matter)
 $script:AmbiguousFeatureWords = @("Fly", "Speed", "Velocity", "ESP", "Reach", "Freecam", "Hitboxes")
 
 $script:KnownInjectorProcessNames = @(
@@ -126,9 +54,6 @@ $script:KnownInjectorProcessNames = @(
     "extremeinjector", "memhack", "prestigeloader", "ghostloader"
 )
 
-# Known cheat-client / injector install folders. Real client mods do not
-# typically create their own top-level %AppData% or %LocalAppData% folder,
-# so a folder match here is a strong, independent signal.
 $script:KnownCheatFolders = @(
     ".wurst", ".impact", ".meteor-client", ".meteorclient", ".future-client",
     ".sigma", ".aristois", ".rusherhack", ".salhack", ".kamiblue",
@@ -136,11 +61,6 @@ $script:KnownCheatFolders = @(
     ".prestige", ".ghost", ".ghostclient", ".rise", ".onset", ".async",
     ".exhibition", ".expression"
 )
-
-# Dedicated macro / autoclicker software - not a game mod at all, but a
-# system-wide tool. Flagged with lower severity than an actual cheat client,
-# since owning the tool isn't proof it was used in-game, but it's relevant
-# context if someone is asking "is this person cheating".
 $script:MacroToolProcessNames = @(
     "autohotkeyu64", "autohotkeyu32", "autohotkey", "ahktray",
     "tinytask", "macrorecorder", "macro recorder", "pulovermacrocreator",
@@ -148,19 +68,11 @@ $script:MacroToolProcessNames = @(
     "autoclicker", "gsautoclicker", "opautoclicker", "fastclicker"
 )
 
-# Peripheral-manufacturer software that CAN do macros/rebinds but is
-# overwhelmingly used for entirely legitimate reasons (RGB, DPI, etc).
-# We surface these as informational only - never HIGH/MEDIUM on their own.
 $script:PeripheralMacroSoftware = @(
     "lghub", "lgshub", "logitech gaming software", "razer synapse",
     "steelseries engine", "corsair icue", "roccat swarm", "wootility"
 )
 
-# Common, high-popularity mod name fragments used to avoid flagging a jar
-# just because Modrinth's lookup missed it (rate limit, private build,
-# CurseForge-only distribution, etc). This does NOT skip signature scanning -
-# it only prevents an "unverified" mod from being treated as inherently
-# suspicious in the summary if it also comes back clean.
 $script:KnownLegitModNamePatterns = @(
     'sodium', 'lithium', 'phosphor', 'starlight', 'lazydfu', 'ferritecore',
     'modmenu', 'fabric-api', 'forge-?\d', 'optifine', '^jei[-_]', '^rei[-_]',
@@ -178,16 +90,9 @@ function Test-IsKnownLegitModName {
     return $false
 }
 
-# Known-legitimate native (JNI) libraries that mods extract to a temp folder
-# at runtime. These are native codec/audio libs bundled by common, verified
-# mods - e.g. Simple Voice Chat's opus/rnnoise/speex/lame codecs, which get
-# extracted at launch as "libNAMEj-<hash>\libNAMEj.dll". This is standard JNI
-# behavior for any Java mod shipping native code, not a cheat-bypass
-# technique, so Phase 6 whitelists these by filename pattern (the temp
-# folder's hash suffix changes per install, so we match on filename only).
 $script:KnownLegitTempModules = @(
-    '^lib[a-z0-9]+4j\.dll$',   # opus4j / rnnoise4j / speex4j / lame4j (Simple Voice Chat JNI codecs)
-    '^lwjgl.*\.dll$',           # LWJGL natives (core Minecraft/LWJGL dependency)
+    '^lib[a-z0-9]+4j\.dll$',   
+    '^lwjgl.*\.dll$',           
     '^glfw.*\.dll$',
     '^jinput-.*\.dll$',
     '^OpenAL.*\.dll$'
@@ -202,12 +107,7 @@ function Test-IsKnownLegitTempModule {
     return $false
 }
 
-# ============================================================================
-#  SIGNATURE MATCHING HELPERS
-# ============================================================================
-
 function Get-ClientNameMatches {
-    <# Distinctive cheat-client names - substring match is fine, low collision risk. #>
     param([string]$Text)
     $found = [System.Collections.Generic.List[string]]::new()
     foreach ($name in $script:CheatClientNames) {
@@ -217,12 +117,7 @@ function Get-ClientNameMatches {
 }
 
 function Get-FeatureWordMatches {
-    <#
-        Generic cheat-module names - matched with word boundaries (using
-        lookaround instead of \b so it still works on CamelCase-glued
-        identifiers like "KillAuraModule") to cut down on accidental
-        substring hits inside unrelated text.
-    #>
+
     param([string]$Text)
     $found = [System.Collections.Generic.List[string]]::new()
     foreach ($word in $script:CheatFeatureWords) {
@@ -233,13 +128,7 @@ function Get-FeatureWordMatches {
 }
 
 function Get-SignatureRisk {
-    <#
-        Turns a set of client-name hits + feature-word hits into a severity.
-        - Any distinctive client-name hit -> HIGH, full stop.
-        - Feature words: ambiguous single-word ones are discounted; you need
-          either 1 non-ambiguous word, or 3+ ambiguous words, for MEDIUM, and
-          4+ total (or 2+ non-ambiguous) for HIGH.
-    #>
+
     param([string[]]$ClientHits, [string[]]$FeatureHits)
 
     if ($ClientHits -and $ClientHits.Count -gt 0) { return "HIGH" }
@@ -254,54 +143,9 @@ function Get-SignatureRisk {
     return $null
 }
 
-# ============================================================================
-#  UI HELPERS  (ASCII-only visual theme)
-# ============================================================================
-
-function Get-CenteredLine {
-    <#
-        Centers a piece of text inside a fixed-width interior, returning the
-        padded string (no border characters). Used everywhere so every panel
-        in the tool lines up identically instead of hand-padding strings.
-    #>
-    param(
-        [string]$Text,
-        [int]$Width = $script:Config.BoxWidth
-    )
-    if ($Text.Length -ge $Width) { return $Text.Substring(0, $Width) }
-    $totalPad = $Width - $Text.Length
-    $left  = [math]::Floor($totalPad / 2)
-    $right = $totalPad - $left
-    return ((" " * $left) + $Text + (" " * $right))
-}
-
-function Write-BoxLine {
-    <# Writes one centered line wrapped in the standard "| ... |" border. #>
-    param(
-        [string]$Text = "",
-        [ConsoleColor]$Color = 'White',
-        [ConsoleColor]$BorderColor = 'DarkGray'
-    )
-    Write-Host " |" -NoNewline -ForegroundColor $BorderColor
-    Write-Host (Get-CenteredLine -Text $Text) -NoNewline -ForegroundColor $Color
-    Write-Host "|" -ForegroundColor $BorderColor
-}
-
-function Write-BoxRule {
-    param([ConsoleColor]$Color = 'DarkGray')
-    Write-Host (" +" + ("=" * $script:Config.BoxWidth) + "+") -ForegroundColor $Color
-}
 
 function Get-RunningMinecraftInstances {
-    <#
-        Finds running java/javaw processes and tries to determine the actual
-        game directory each one was launched from, by reading its command
-        line (read-only WMI query, no code execution). Most launchers
-        (vanilla, MultiMC, Prism, CurseForge, ATLauncher) pass --gameDir
-        explicitly. If that's absent, we fall back to walking up from the
-        Java classpath looking for a folder that contains "mods" or "saves"
-        (the .minecraft/instance root signature).
-    #>
+
     $javaProcs = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -match '^java(w)?$' }
     $instances = @()
 
@@ -369,7 +213,6 @@ function Resolve-ModsPath {
         return $chosen.ModsPath
     }
 
-    # Multiple instances detected - prompt the user to pick which one to scan.
     Write-Host ""
     Write-Host "    [!] Multiple running Minecraft instances detected:" -ForegroundColor Yellow
     Write-Host ""
@@ -398,31 +241,22 @@ function Resolve-ModsPath {
 
 function Write-Banner {
     Clear-Host
-    $w = $script:Config.BoxWidth
-
+    $width = 74
+    $line = "=" * $width
     Write-Host ""
-    Write-BoxRule -Color DarkRed
-    Write-BoxLine -Text "" -BorderColor DarkRed
-    Write-BoxLine -Text "__     __ _    __  __ ____"      -Color Red   -BorderColor DarkRed
-    Write-BoxLine -Text "\ \   / // \  |  \/  |  _ \"      -Color Red   -BorderColor DarkRed
-    Write-BoxLine -Text " \ \ / // _ \ | |\/| | |_) |"     -Color Red   -BorderColor DarkRed
-    Write-BoxLine -Text "  \ V // ___ \| |  | |  __/"      -Color Red   -BorderColor DarkRed
-    Write-BoxLine -Text "   \_//_/   \_\_|  |_|_|"         -Color Red   -BorderColor DarkRed
-    Write-BoxLine -Text "" -BorderColor DarkRed
-    Write-BoxLine -Text "C H E A T   S C A N N E R"        -Color White -BorderColor DarkRed
-    Write-BoxLine -Text "" -BorderColor DarkRed
-    Write-BoxLine -Text "made by ArchiveThomas"            -Color Cyan  -BorderColor DarkRed
-    Write-BoxLine -Text "credit to Laffer for the ideas"   -Color DarkCyan -BorderColor DarkRed
-    Write-BoxLine -Text "" -BorderColor DarkRed
-    Write-BoxRule -Color DarkRed
+    Write-Host " +$line+" -ForegroundColor DarkRed
+    Write-Host (" |" + (" " * $width) + "|") -ForegroundColor DarkRed
+    Write-Host (" |" + "   __     __ _    __  __ ____".PadRight($width) + "|") -ForegroundColor Red
+    Write-Host (" |" + "   \ \   / // \  |  \/  |  _ \".PadRight($width) + "|") -ForegroundColor Red
+    Write-Host (" |" + "    \ \ / // _ \ | |\/| | |_) |".PadRight($width) + "|") -ForegroundColor Red
+    Write-Host (" |" + "     \ V // ___ \| |  | |  __/".PadRight($width) + "|") -ForegroundColor Red
+    Write-Host (" |" + "      \_//_/   \_\_|  |_|_|".PadRight($width) + "|") -ForegroundColor Red
+    Write-Host (" |" + "   C H E A T   S C A N N E R".PadRight($width) + "|") -ForegroundColor White
+    Write-Host (" |" + (" " * $width) + "|") -ForegroundColor DarkRed
+    Write-Host " +$line+" -ForegroundColor DarkRed
     Write-Host ""
-
     Write-Host "   * Version        " -NoNewline -ForegroundColor DarkGray
     Write-Host ": $($script:Config.Version)" -ForegroundColor White
-    Write-Host "   * Author         " -NoNewline -ForegroundColor DarkGray
-    Write-Host ": $($script:Config.Author)" -ForegroundColor White
-    Write-Host "   * Idea credit    " -NoNewline -ForegroundColor DarkGray
-    Write-Host ": $($script:Config.Credits)" -ForegroundColor White
     Write-Host "   * Scan started   " -NoNewline -ForegroundColor DarkGray
     Write-Host ": $(Get-Date)" -ForegroundColor White
     Write-Host "   * Host / User    " -NoNewline -ForegroundColor DarkGray
@@ -442,12 +276,11 @@ function Write-Banner {
 function Write-PhaseHeader {
     param([string]$Text, [ConsoleColor]$Color = 'Cyan')
     $inner = 68
-    $label = ">> $Text"
+    $label = " >> $Text"
+    $padded = $label.PadRight($inner)
     Write-Host ""
     Write-Host (" +" + ("-" * ($inner + 2)) + "+") -ForegroundColor $Color
-    Write-Host " |" -NoNewline -ForegroundColor $Color
-    Write-Host (Get-CenteredLine -Text $label -Width ($inner + 2)) -NoNewline -ForegroundColor $Color
-    Write-Host "|" -ForegroundColor $Color
+    Write-Host (" | $padded |") -ForegroundColor $Color
     Write-Host (" +" + ("-" * ($inner + 2)) + "+") -ForegroundColor $Color
 }
 
@@ -475,10 +308,6 @@ function Add-Finding {
     Write-Host ("     $icon [{0,-6}] {1}" -f $Severity, $Detail) -ForegroundColor $color
 }
 
-# ============================================================================
-#  PHASE 1: JAR PARSER + MODRINTH VERIFICATION
-# ============================================================================
-
 function Get-FileSHA1 {
     param([string]$FilePath)
     try { return (Get-FileHash -Path $FilePath -Algorithm SHA1 -ErrorAction Stop).Hash }
@@ -486,12 +315,7 @@ function Get-FileSHA1 {
 }
 
 function Get-ModrinthProject {
-    <#
-        Read-only GET request to the public Modrinth API. Returns JSON metadata
-        only (project name / slug) if the file's hash matches a known published
-        mod. No code is downloaded or executed - this purely tells us whether
-        a jar is a recognized, published mod or an unknown file.
-    #>
+
     param([string]$Hash)
     if (-not $Hash) { return $null }
     try {
@@ -575,10 +399,6 @@ function Invoke-JarParserPhase {
 
     return @{ Verified = $verified; Unknown = $unknown }
 }
-
-# ============================================================================
-#  PHASE 2: DEEP THREAT SCAN (unverified jars + embedded jars)
-# ============================================================================
 
 function Test-CheatSignaturesInFile {
     param([string]$FilePath)
@@ -673,10 +493,6 @@ function Invoke-DeepThreatScanPhase {
     return $threats
 }
 
-# ============================================================================
-#  PHASE 3: KNOWN CHEAT-CLIENT FOLDER SCAN
-# ============================================================================
-
 function Invoke-CheatFolderScanPhase {
     Write-PhaseHeader -Text ("PHASE 3 / {0}  -  CHEAT-CLIENT FOLDER SCAN" -f $script:Config.TotalPhases)
 
@@ -698,10 +514,6 @@ function Invoke-CheatFolderScanPhase {
         Write-Host "   [OK] No known cheat-client install folders found." -ForegroundColor Green
     }
 }
-
-# ============================================================================
-#  PHASE 4: BAM PARSER
-# ============================================================================
 
 function Invoke-BamParserPhase {
     Write-PhaseHeader -Text ("PHASE 4 / {0}  -  BAM PARSER (EXECUTION HISTORY)" -f $script:Config.TotalPhases)
@@ -742,10 +554,6 @@ function Invoke-BamParserPhase {
     }
 }
 
-# ============================================================================
-#  PHASE 5: SERVICES / PROCESS CHECK
-# ============================================================================
-
 function Invoke-ServiceProcessPhase {
     Write-PhaseHeader -Text ("PHASE 5 / {0}  -  SERVICES & PROCESS CHECK" -f $script:Config.TotalPhases)
 
@@ -775,10 +583,6 @@ function Invoke-ServiceProcessPhase {
     }
 }
 
-# ============================================================================
-#  PHASE 6: FILELESS BYPASS DETECTION
-# ============================================================================
-
 function Invoke-FilelessBypassPhase {
     Write-PhaseHeader -Text ("PHASE 6 / {0}  -  FILELESS BYPASS DETECTION" -f $script:Config.TotalPhases)
 
@@ -799,9 +603,6 @@ function Invoke-FilelessBypassPhase {
             if (-not $path) { continue }
             if ($path -match '\\Temp\\|\\AppData\\Local\\Temp\\|\\Downloads\\') {
                 if (Test-IsKnownLegitTempModule -Path $path) {
-                    # Known legitimate JNI native library extraction (e.g. Simple
-                    # Voice Chat's opus/rnnoise/speex/lame codecs, LWJGL natives).
-                    # Skip flagging, but keep it visible so it's not silently hidden.
                     Write-Host ("     [OK] Ignoring known-legit native lib (PID {0}): {1}" -f $jp.Id, (Split-Path $path -Leaf)) -ForegroundColor DarkGray
                 } else {
                     Add-Finding "MEDIUM" "FilelessCheck" ("Java process (PID {0}) loaded a module from a temp/download path: {1}" -f $jp.Id, $path)
@@ -827,20 +628,7 @@ function Invoke-FilelessBypassPhase {
     }
 }
 
-# ============================================================================
-#  PHASE 7: MACRO / AUTOMATION TOOL SCAN
-# ============================================================================
-
 function Invoke-MacroToolScanPhase {
-    <#
-        System-wide scan (not limited to Minecraft) for autoclicker/macro
-        software that could be used to automate clicking, key presses, or
-        combat timing. Dedicated macro tools are flagged MEDIUM. Peripheral-
-        manufacturer suites (Logitech/Razer/Corsair/etc) are flagged INFO
-        only, since the overwhelming majority of installs are unrelated to
-        gaming and having the software present isn't evidence of cheating -
-        it's just useful context.
-    #>
     Write-PhaseHeader -Text ("PHASE 7 / {0}  -  MACRO / AUTOMATION TOOL SCAN" -f $script:Config.TotalPhases)
 
     $procs = Get-Process -ErrorAction SilentlyContinue
@@ -872,10 +660,6 @@ function Invoke-MacroToolScanPhase {
         Write-Host "   [i] Informational peripheral-software hits are listed above and in the summary, but do not count toward the verdict on their own." -ForegroundColor DarkGray
     }
 }
-
-# ============================================================================
-#  SUMMARY + EXPORT
-# ============================================================================
 
 function Write-StatLine {
     param([string]$Label, [string]$Value, [ConsoleColor]$Color)
@@ -924,19 +708,33 @@ function Write-SummaryReport {
 
 function Write-VerdictBanner {
     param([bool]$Clean)
+    $width = 74
+    $line = "=" * $width
     $color = if ($Clean) { "Green" } else { "Red" }
     $label = if ($Clean) { "V E R D I C T :   C L E A N" } else { "V E R D I C T :   C H E A T I N G   D E T E C T E D" }
 
     Write-Host ""
-    Write-BoxRule -Color $color
-    Write-BoxLine -Text "" -BorderColor $color
-    Write-BoxLine -Text ("*" * ($script:Config.BoxWidth - 4)) -Color $color -BorderColor $color
-    Write-BoxLine -Text "*" -Color $color -BorderColor $color
-    Write-BoxLine -Text $label -Color $color -BorderColor $color
-    Write-BoxLine -Text "*" -Color $color -BorderColor $color
-    Write-BoxLine -Text ("*" * ($script:Config.BoxWidth - 4)) -Color $color -BorderColor $color
-    Write-BoxLine -Text "" -BorderColor $color
-    Write-BoxRule -Color $color
+    Write-Host " +$line+" -ForegroundColor $color
+    Write-Host (" |" + (" " * $width) + "|") -ForegroundColor $color
+
+    $innerWidth = $width - 4
+    $starLine = "*" * $innerWidth
+    Write-Host (" |  " + $starLine + "  |") -ForegroundColor $color
+    Write-Host (" |  *" + (" " * ($innerWidth - 2)) + "*  |") -ForegroundColor $color
+
+    $labelPadded = $label
+    $padTotal = $innerWidth - 2 - $labelPadded.Length
+    $padLeft = [math]::Floor($padTotal / 2)
+    $padRight = $padTotal - $padLeft
+    if ($padLeft -lt 0) { $padLeft = 0 }
+    if ($padRight -lt 0) { $padRight = 0 }
+    $centeredLabel = (" " * $padLeft) + $labelPadded + (" " * $padRight)
+    Write-Host (" |  *" + $centeredLabel + "*  |") -ForegroundColor $color
+
+    Write-Host (" |  *" + (" " * ($innerWidth - 2)) + "*  |") -ForegroundColor $color
+    Write-Host (" |  " + $starLine + "  |") -ForegroundColor $color
+    Write-Host (" |" + (" " * $width) + "|") -ForegroundColor $color
+    Write-Host " +$line+" -ForegroundColor $color
 }
 
 function Write-OverallSummary {
@@ -1008,8 +806,6 @@ function Export-JsonReport {
     $report = @{
         Timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         Version   = $script:Config.Version
-        Author    = $script:Config.Author
-        Credits   = $script:Config.Credits
         Verified  = $Verified
         Unknown   = $Unknown
         JarThreats = $Threats
@@ -1022,10 +818,6 @@ function Export-JsonReport {
         Write-Host "   [X] Failed to export report: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
-
-# ============================================================================
-#  MAIN
-# ============================================================================
 
 function Main {
     Write-Banner
@@ -1048,14 +840,12 @@ function Main {
         Export-JsonReport -Verified $p1.Verified -Unknown $p1.Unknown -Threats $threats
     }
 
-    Write-Host ""
-    Write-BoxRule -Color DarkCyan
-    Write-BoxLine -Text "Scan Completed. Please review the verdict above." -Color Cyan -BorderColor DarkCyan
-    Write-BoxLine -Text "Thank you for using Vamp Cheat Scanner - stay safe and don't cheat!" -Color Cyan -BorderColor DarkCyan
-    Write-BoxLine -Text "" -BorderColor DarkCyan
-    Write-BoxLine -Text "Made by ArchiveThomas  |  Credit to Laffer for the ideas" -Color DarkGray -BorderColor DarkCyan
-    Write-BoxRule -Color DarkCyan
-    Write-Host ""
+    Write-Host "   Scan Completed. Please review the verdict above and take appropriate action." -ForegroundColor Cyan
+    Write-Host "   Thank you for using Vamp Cheat Scanner. Stay safe and don't cheat!" -ForegroundColor Cyan
+
+
+    Write-Host "Please press any key to exit this scan..." -ForegroundColor DarkGray
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 }
 
 Main
