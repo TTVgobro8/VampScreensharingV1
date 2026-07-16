@@ -35,8 +35,10 @@
     powershell -ExecutionPolicy Bypass -File .\VampCheatScanner.ps1 -ExportReport
 
 .NOTES
-    Name    : Vamp Cheat Scanner
-    Version : 3.0.0
+    Name       : Vamp Cheat Scanner
+    Version    : 3.1.0
+    Author     : ArchiveThomas
+    Credits    : Concept & detection ideas by Laffer
     No third-party scripts, no Invoke-Expression, no remote code execution.
     NOTE: This build uses plain ASCII characters only (no Unicode box-drawing
     or emoji) so it renders correctly regardless of file encoding / console
@@ -58,10 +60,13 @@ param(
 
 $script:Config = @{
     AppName        = "Vamp Cheat Scanner"
-    Version        = "3.0.0"
+    Version        = "3.1.0"
+    Author         = "ArchiveThomas"
+    Credits        = "Laffer"
     DefaultModsPath = "$env:APPDATA\.minecraft\mods"
     TempDirName    = "vamp_cheatscanner_tmp"
     TotalPhases    = 7
+    BoxWidth       = 74
 }
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -253,6 +258,40 @@ function Get-SignatureRisk {
 #  UI HELPERS  (ASCII-only visual theme)
 # ============================================================================
 
+function Get-CenteredLine {
+    <#
+        Centers a piece of text inside a fixed-width interior, returning the
+        padded string (no border characters). Used everywhere so every panel
+        in the tool lines up identically instead of hand-padding strings.
+    #>
+    param(
+        [string]$Text,
+        [int]$Width = $script:Config.BoxWidth
+    )
+    if ($Text.Length -ge $Width) { return $Text.Substring(0, $Width) }
+    $totalPad = $Width - $Text.Length
+    $left  = [math]::Floor($totalPad / 2)
+    $right = $totalPad - $left
+    return ((" " * $left) + $Text + (" " * $right))
+}
+
+function Write-BoxLine {
+    <# Writes one centered line wrapped in the standard "| ... |" border. #>
+    param(
+        [string]$Text = "",
+        [ConsoleColor]$Color = 'White',
+        [ConsoleColor]$BorderColor = 'DarkGray'
+    )
+    Write-Host " |" -NoNewline -ForegroundColor $BorderColor
+    Write-Host (Get-CenteredLine -Text $Text) -NoNewline -ForegroundColor $Color
+    Write-Host "|" -ForegroundColor $BorderColor
+}
+
+function Write-BoxRule {
+    param([ConsoleColor]$Color = 'DarkGray')
+    Write-Host (" +" + ("=" * $script:Config.BoxWidth) + "+") -ForegroundColor $Color
+}
+
 function Get-RunningMinecraftInstances {
     <#
         Finds running java/javaw processes and tries to determine the actual
@@ -359,22 +398,31 @@ function Resolve-ModsPath {
 
 function Write-Banner {
     Clear-Host
-    $width = 74
-    $line = "=" * $width
+    $w = $script:Config.BoxWidth
+
     Write-Host ""
-    Write-Host " +$line+" -ForegroundColor DarkRed
-    Write-Host (" |" + (" " * $width) + "|") -ForegroundColor DarkRed
-    Write-Host (" |" + "   __     __ _    __  __ ____".PadRight($width) + "|") -ForegroundColor Red
-    Write-Host (" |" + "   \ \   / // \  |  \/  |  _ \".PadRight($width) + "|") -ForegroundColor Red
-    Write-Host (" |" + "    \ \ / // _ \ | |\/| | |_) |".PadRight($width) + "|") -ForegroundColor Red
-    Write-Host (" |" + "     \ V // ___ \| |  | |  __/".PadRight($width) + "|") -ForegroundColor Red
-    Write-Host (" |" + "      \_//_/   \_\_|  |_|_|".PadRight($width) + "|") -ForegroundColor Red
-    Write-Host (" |" + "   C H E A T   S C A N N E R".PadRight($width) + "|") -ForegroundColor White
-    Write-Host (" |" + (" " * $width) + "|") -ForegroundColor DarkRed
-    Write-Host " +$line+" -ForegroundColor DarkRed
+    Write-BoxRule -Color DarkRed
+    Write-BoxLine -Text "" -BorderColor DarkRed
+    Write-BoxLine -Text "__     __ _    __  __ ____"      -Color Red   -BorderColor DarkRed
+    Write-BoxLine -Text "\ \   / // \  |  \/  |  _ \"      -Color Red   -BorderColor DarkRed
+    Write-BoxLine -Text " \ \ / // _ \ | |\/| | |_) |"     -Color Red   -BorderColor DarkRed
+    Write-BoxLine -Text "  \ V // ___ \| |  | |  __/"      -Color Red   -BorderColor DarkRed
+    Write-BoxLine -Text "   \_//_/   \_\_|  |_|_|"         -Color Red   -BorderColor DarkRed
+    Write-BoxLine -Text "" -BorderColor DarkRed
+    Write-BoxLine -Text "C H E A T   S C A N N E R"        -Color White -BorderColor DarkRed
+    Write-BoxLine -Text "" -BorderColor DarkRed
+    Write-BoxLine -Text "made by ArchiveThomas"            -Color Cyan  -BorderColor DarkRed
+    Write-BoxLine -Text "credit to Laffer for the ideas"   -Color DarkCyan -BorderColor DarkRed
+    Write-BoxLine -Text "" -BorderColor DarkRed
+    Write-BoxRule -Color DarkRed
     Write-Host ""
+
     Write-Host "   * Version        " -NoNewline -ForegroundColor DarkGray
     Write-Host ": $($script:Config.Version)" -ForegroundColor White
+    Write-Host "   * Author         " -NoNewline -ForegroundColor DarkGray
+    Write-Host ": $($script:Config.Author)" -ForegroundColor White
+    Write-Host "   * Idea credit    " -NoNewline -ForegroundColor DarkGray
+    Write-Host ": $($script:Config.Credits)" -ForegroundColor White
     Write-Host "   * Scan started   " -NoNewline -ForegroundColor DarkGray
     Write-Host ": $(Get-Date)" -ForegroundColor White
     Write-Host "   * Host / User    " -NoNewline -ForegroundColor DarkGray
@@ -394,11 +442,12 @@ function Write-Banner {
 function Write-PhaseHeader {
     param([string]$Text, [ConsoleColor]$Color = 'Cyan')
     $inner = 68
-    $label = " >> $Text"
-    $padded = $label.PadRight($inner)
+    $label = ">> $Text"
     Write-Host ""
     Write-Host (" +" + ("-" * ($inner + 2)) + "+") -ForegroundColor $Color
-    Write-Host (" | $padded |") -ForegroundColor $Color
+    Write-Host " |" -NoNewline -ForegroundColor $Color
+    Write-Host (Get-CenteredLine -Text $label -Width ($inner + 2)) -NoNewline -ForegroundColor $Color
+    Write-Host "|" -ForegroundColor $Color
     Write-Host (" +" + ("-" * ($inner + 2)) + "+") -ForegroundColor $Color
 }
 
@@ -875,33 +924,19 @@ function Write-SummaryReport {
 
 function Write-VerdictBanner {
     param([bool]$Clean)
-    $width = 74
-    $line = "=" * $width
     $color = if ($Clean) { "Green" } else { "Red" }
     $label = if ($Clean) { "V E R D I C T :   C L E A N" } else { "V E R D I C T :   C H E A T I N G   D E T E C T E D" }
 
     Write-Host ""
-    Write-Host " +$line+" -ForegroundColor $color
-    Write-Host (" |" + (" " * $width) + "|") -ForegroundColor $color
-
-    $innerWidth = $width - 4
-    $starLine = "*" * $innerWidth
-    Write-Host (" |  " + $starLine + "  |") -ForegroundColor $color
-    Write-Host (" |  *" + (" " * ($innerWidth - 2)) + "*  |") -ForegroundColor $color
-
-    $labelPadded = $label
-    $padTotal = $innerWidth - 2 - $labelPadded.Length
-    $padLeft = [math]::Floor($padTotal / 2)
-    $padRight = $padTotal - $padLeft
-    if ($padLeft -lt 0) { $padLeft = 0 }
-    if ($padRight -lt 0) { $padRight = 0 }
-    $centeredLabel = (" " * $padLeft) + $labelPadded + (" " * $padRight)
-    Write-Host (" |  *" + $centeredLabel + "*  |") -ForegroundColor $color
-
-    Write-Host (" |  *" + (" " * ($innerWidth - 2)) + "*  |") -ForegroundColor $color
-    Write-Host (" |  " + $starLine + "  |") -ForegroundColor $color
-    Write-Host (" |" + (" " * $width) + "|") -ForegroundColor $color
-    Write-Host " +$line+" -ForegroundColor $color
+    Write-BoxRule -Color $color
+    Write-BoxLine -Text "" -BorderColor $color
+    Write-BoxLine -Text ("*" * ($script:Config.BoxWidth - 4)) -Color $color -BorderColor $color
+    Write-BoxLine -Text "*" -Color $color -BorderColor $color
+    Write-BoxLine -Text $label -Color $color -BorderColor $color
+    Write-BoxLine -Text "*" -Color $color -BorderColor $color
+    Write-BoxLine -Text ("*" * ($script:Config.BoxWidth - 4)) -Color $color -BorderColor $color
+    Write-BoxLine -Text "" -BorderColor $color
+    Write-BoxRule -Color $color
 }
 
 function Write-OverallSummary {
@@ -973,6 +1008,8 @@ function Export-JsonReport {
     $report = @{
         Timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         Version   = $script:Config.Version
+        Author    = $script:Config.Author
+        Credits   = $script:Config.Credits
         Verified  = $Verified
         Unknown   = $Unknown
         JarThreats = $Threats
@@ -1011,12 +1048,14 @@ function Main {
         Export-JsonReport -Verified $p1.Verified -Unknown $p1.Unknown -Threats $threats
     }
 
-    Write-Host "   Scan Completed. Please review the verdict above and take appropriate action." -ForegroundColor Cyan
-    Write-Host "   Thank you for using Vamp Cheat Scanner. Stay safe and don't cheat!" -ForegroundColor Cyan
-
-
-    Write-Host "Please press any key to exit this scan..." -ForegroundColor DarkGray
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    Write-Host ""
+    Write-BoxRule -Color DarkCyan
+    Write-BoxLine -Text "Scan Completed. Please review the verdict above." -Color Cyan -BorderColor DarkCyan
+    Write-BoxLine -Text "Thank you for using Vamp Cheat Scanner - stay safe and don't cheat!" -Color Cyan -BorderColor DarkCyan
+    Write-BoxLine -Text "" -BorderColor DarkCyan
+    Write-BoxLine -Text "Made by ArchiveThomas  |  Credit to Laffer for the ideas" -Color DarkGray -BorderColor DarkCyan
+    Write-BoxRule -Color DarkCyan
+    Write-Host ""
 }
 
 Main
