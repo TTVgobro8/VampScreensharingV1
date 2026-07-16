@@ -452,7 +452,7 @@ function Invoke-CommandHistoryPhase {
     Write-PhaseHeader -Text ("PHASE 10 / {0}  -  COMMAND HISTORY ANALYSIS" -f $script:Config.TotalPhases)
 
     $mcStart = Get-MinecraftStartTime
-    $since = if ($mcStart) { $mcStart } else { (Get-Date).AddHours(-48) }
+    $since = if ($mcStart) { $mcStart } else { (Get-Date).AddHours(-24) }
     Write-Host ("   Searching commands since: {0}" -f $since.ToString('yyyy-MM-dd HH:mm:ss')) -ForegroundColor Gray
 
     $suspiciousCommands = @(
