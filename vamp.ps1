@@ -35,8 +35,8 @@ $script:UI = @{
     Width = 74   # inner content width used by all boxes
     TL = [char]0x2554 ; TR = [char]0x2557 ; BL = [char]0x255A ; BR = [char]0x255D  # double corners  ╔ ╗ ╚ ╝
     H  = [char]0x2550 ; V  = [char]0x2551  # double line/pipe  ═ ║
-    tL = [char]0x250C ; tR = [char]0x2510 ; bL = [char]0x2514 ; bR = [char]0x2518  # single corners  ┌ ┐ └ ┘
-    h  = [char]0x2500 ; v  = [char]0x2502  # single line/pipe  ─ │
+    STL = [char]0x250C ; STR = [char]0x2510 ; SBL = [char]0x2514 ; SBR = [char]0x2518  # single corners  ┌ ┐ └ ┘
+    SH  = [char]0x2500 ; SV  = [char]0x2502  # single line/pipe  ─ │
     ML = [char]0x2560 ; MR = [char]0x2563  # double line T-joints  ╠ ╣
 }
 
@@ -319,9 +319,9 @@ function Write-PhaseHeader {
     if ($label.Length -gt $w) { $label = $label.Substring(0, $w) }
     $padded = $label.PadRight($w)
     Write-Host ""
-    Write-Host ("  $($script:UI.tL)" + ($script:UI.h.ToString() * ($w + 2)) + "$($script:UI.tR)") -ForegroundColor $Color
-    Write-Host ("  $($script:UI.v) $padded $($script:UI.v)") -ForegroundColor $Color
-    Write-Host ("  $($script:UI.bL)" + ($script:UI.h.ToString() * ($w + 2)) + "$($script:UI.bR)") -ForegroundColor $Color
+    Write-Host ("  $($script:UI.STL)" + ($script:UI.SH.ToString() * ($w + 2)) + "$($script:UI.STR)") -ForegroundColor $Color
+    Write-Host ("  $($script:UI.SV) $padded $($script:UI.SV)") -ForegroundColor $Color
+    Write-Host ("  $($script:UI.SBL)" + ($script:UI.SH.ToString() * ($w + 2)) + "$($script:UI.SBR)") -ForegroundColor $Color
 }
 
 function Write-ProgressBar {
@@ -835,19 +835,19 @@ function Write-OverallSummary {
 function Write-CreditsFooter {
     $w = $script:UI.Width
     Write-Host ""
-    Write-Host ("  $($script:UI.tL)" + ($script:UI.h.ToString() * ($w + 2)) + "$($script:UI.tR)") -ForegroundColor DarkYellow
+    Write-Host ("  $($script:UI.STL)" + ($script:UI.SH.ToString() * ($w + 2)) + "$($script:UI.STR)") -ForegroundColor DarkYellow
     $title = "CREDITS"
     $padTotal = $w - $title.Length
     $padL = [math]::Floor($padTotal / 2); $padR = $padTotal - $padL
-    Write-Host ("  $($script:UI.v) " + (" " * $padL) + $title + (" " * $padR) + " $($script:UI.v)") -ForegroundColor DarkYellow
-    Write-Host ("  $($script:UI.tL)" + ($script:UI.h.ToString() * ($w + 2)) + "$($script:UI.tR)".Replace($script:UI.tL,$script:UI.ML).Replace($script:UI.tR,$script:UI.MR)) -ForegroundColor DarkYellow
+    Write-Host ("  $($script:UI.SV) " + (" " * $padL) + $title + (" " * $padR) + " $($script:UI.SV)") -ForegroundColor DarkYellow
+    Write-Host ("  $($script:UI.STL)" + ($script:UI.SH.ToString() * ($w + 2)) + "$($script:UI.STR)".Replace($script:UI.STL,$script:UI.ML).Replace($script:UI.STR,$script:UI.MR)) -ForegroundColor DarkYellow
     foreach ($c in $script:Config.Credits) {
         $line = ("{0,-14} : {1}" -f $c.Role, $c.Name)
         $pad = $w - $line.Length
         if ($pad -lt 0) { $pad = 0 }
-        Write-Host ("  $($script:UI.v) $line" + (" " * $pad) + " $($script:UI.v)") -ForegroundColor Yellow
+        Write-Host ("  $($script:UI.SV) $line" + (" " * $pad) + " $($script:UI.SV)") -ForegroundColor Yellow
     }
-    Write-Host ("  $($script:UI.bL)" + ($script:UI.h.ToString() * ($w + 2)) + "$($script:UI.bR)") -ForegroundColor DarkYellow
+    Write-Host ("  $($script:UI.SBL)" + ($script:UI.SH.ToString() * ($w + 2)) + "$($script:UI.SBR)") -ForegroundColor DarkYellow
     Write-Host ""
 }
 
