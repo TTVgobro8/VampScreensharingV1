@@ -1013,6 +1013,10 @@ function Main {
 
     Write-Host "   Scan Completed. Please review the verdict above and take appropriate action." -ForegroundColor Cyan
     Write-Host "   Thank you for using Vamp Cheat Scanner. Stay safe and don't cheat!" -ForegroundColor Cyan
+
+
+    Write-Host "Please press any key to exit this scan..." -ForegroundColor DarkGray
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 }
 
 Main
