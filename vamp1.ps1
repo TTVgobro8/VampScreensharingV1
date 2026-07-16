@@ -574,6 +574,13 @@ function Get-FileSHA1 {
     catch { return $null }
 }
 
+function Write-FinalSummary {
+    param(
+        [Parameter(Mandatory=$false)] $Verified,
+        [Parameter(Mandatory=$false)] $Unknown,
+        [Parameter(Mandatory=$false)] $Threats
+    )
+
     Write-PhaseHeader -Text "FINAL SUMMARY"
 
     $all = if ($script:Findings) { $script:Findings } else { @() }
