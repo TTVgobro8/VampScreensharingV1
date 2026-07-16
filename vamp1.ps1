@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$ModsPath,
 
-    [Parameter(Mandatory = $false)]
+    [Parameter(Mandatory = $true)]
     [switch]$ExportReport
 )
 
