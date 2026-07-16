@@ -486,8 +486,11 @@ function Invoke-CommandHistoryPhase {
                 } catch { }
             }
 
-            if ($lineTime -and $lineTime -lt $since) { continue }
-            if (-not $lineTime -and $historyFile -and $historyFile.LastWriteTime -lt $since) { continue }
+            if ($lineTime) {
+                if ($lineTime -lt $since) { continue }
+            } else {
+                continue
+            }
 
             foreach ($pattern in $suspiciousCommands) {
                 if ($command -like "*$pattern*" -or $command -match [regex]::Escape($pattern)) {
