@@ -9,10 +9,14 @@ param(
 
 $script:Config = @{
     AppName        = "Vamp Cheat Scanner"
-    Version        = "3.0.0"
+    Version        = "3.1.0"
     DefaultModsPath = "$env:APPDATA\.minecraft\mods"
     TempDirName    = "vamp_cheatscanner_tmp"
     TotalPhases    = 7
+    Credits        = @(
+        @{ Name = "Laffer";        Role = "Ideas" },
+        @{ Name = "ArchiveThomas"; Role = "Made by" }
+    )
 }
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -23,6 +27,50 @@ try {
 
 $script:Findings = New-Object System.Collections.Generic.List[Object]
 $script:StartTime = Get-Date
+
+# ------------------------------------------------------------------------
+# Layout constants - single source of truth so every box lines up
+# ------------------------------------------------------------------------
+$script:UI = @{
+    Width = 74   # inner content width used by all boxes
+    TL = [char]0x2554 ; TR = [char]0x2557 ; BL = [char]0x255A ; BR = [char]0x255D  # double corners  ╔ ╗ ╚ ╝
+    H  = [char]0x2550 ; V  = [char]0x2551  # double line/pipe  ═ ║
+    tL = [char]0x250C ; tR = [char]0x2510 ; bL = [char]0x2514 ; bR = [char]0x2518  # single corners  ┌ ┐ └ ┘
+    h  = [char]0x2500 ; v  = [char]0x2502  # single line/pipe  ─ │
+    ML = [char]0x2560 ; MR = [char]0x2563  # double line T-joints  ╠ ╣
+}
+
+function Get-VisibleLength {
+    param([string]$Text)
+    # Strips nothing special today, but centralizes length calc in case
+    # of future color-tag style markup, keeping padding math correct.
+    return $Text.Length
+}
+
+function Write-DoubleBoxLine {
+    param([string]$Text = "", [ConsoleColor]$Color = 'White', [string]$Align = 'Left')
+    $w = $script:UI.Width
+    $len = Get-VisibleLength -Text $Text
+    if ($len -gt $w) { $Text = $Text.Substring(0, $w); $len = $w }
+    switch ($Align) {
+        'Center' {
+            $padTotal = $w - $len
+            $padL = [math]::Floor($padTotal / 2)
+            $padR = $padTotal - $padL
+            $line = (" " * $padL) + $Text + (" " * $padR)
+        }
+        default {
+            $line = $Text.PadRight($w)
+        }
+    }
+    Write-Host ("  $($script:UI.V)") -NoNewline -ForegroundColor DarkRed
+    Write-Host " $line " -NoNewline -ForegroundColor $Color
+    Write-Host "$($script:UI.V)" -ForegroundColor DarkRed
+}
+
+function Write-DoubleBoxTop    { Write-Host ("  $($script:UI.TL)" + ($script:UI.H.ToString() * ($script:UI.Width + 2)) + "$($script:UI.TR)") -ForegroundColor DarkRed }
+function Write-DoubleBoxBottom { Write-Host ("  $($script:UI.BL)" + ($script:UI.H.ToString() * ($script:UI.Width + 2)) + "$($script:UI.BR)") -ForegroundColor DarkRed }
+function Write-DoubleBoxDivider { Write-Host ("  $($script:UI.ML)" + ($script:UI.H.ToString() * ($script:UI.Width + 2)) + "$($script:UI.MR)") -ForegroundColor DarkRed }
 
 
 $script:CheatClientNames = @(
@@ -91,8 +139,8 @@ function Test-IsKnownLegitModName {
 }
 
 $script:KnownLegitTempModules = @(
-    '^lib[a-z0-9]+4j\.dll$',   
-    '^lwjgl.*\.dll$',           
+    '^lib[a-z0-9]+4j\.dll$',
+    '^lwjgl.*\.dll$',
     '^glfw.*\.dll$',
     '^jinput-.*\.dll$',
     '^OpenAL.*\.dll$'
@@ -117,7 +165,6 @@ function Get-ClientNameMatches {
 }
 
 function Get-FeatureWordMatches {
-
     param([string]$Text)
     $found = [System.Collections.Generic.List[string]]::new()
     foreach ($word in $script:CheatFeatureWords) {
@@ -128,7 +175,6 @@ function Get-FeatureWordMatches {
 }
 
 function Get-SignatureRisk {
-
     param([string[]]$ClientHits, [string[]]$FeatureHits)
 
     if ($ClientHits -and $ClientHits.Count -gt 0) { return "HIGH" }
@@ -145,7 +191,6 @@ function Get-SignatureRisk {
 
 
 function Get-RunningMinecraftInstances {
-
     $javaProcs = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -match '^java(w)?$' }
     $instances = @()
 
@@ -241,47 +286,42 @@ function Resolve-ModsPath {
 
 function Write-Banner {
     Clear-Host
-    $width = 74
-    $line = "=" * $width
     Write-Host ""
-    Write-Host " +$line+" -ForegroundColor DarkRed
-    Write-Host (" |" + (" " * $width) + "|") -ForegroundColor DarkRed
-    Write-Host (" |" + "   __     __ _    __  __ ____".PadRight($width) + "|") -ForegroundColor Red
-    Write-Host (" |" + "   \ \   / // \  |  \/  |  _ \".PadRight($width) + "|") -ForegroundColor Red
-    Write-Host (" |" + "    \ \ / // _ \ | |\/| | |_) |".PadRight($width) + "|") -ForegroundColor Red
-    Write-Host (" |" + "     \ V // ___ \| |  | |  __/".PadRight($width) + "|") -ForegroundColor Red
-    Write-Host (" |" + "      \_//_/   \_\_|  |_|_|".PadRight($width) + "|") -ForegroundColor Red
-    Write-Host (" |" + "   C H E A T   S C A N N E R".PadRight($width) + "|") -ForegroundColor White
-    Write-Host (" |" + (" " * $width) + "|") -ForegroundColor DarkRed
-    Write-Host " +$line+" -ForegroundColor DarkRed
-    Write-Host ""
-    Write-Host "   * Version        " -NoNewline -ForegroundColor DarkGray
-    Write-Host ": $($script:Config.Version)" -ForegroundColor White
-    Write-Host "   * Scan started   " -NoNewline -ForegroundColor DarkGray
-    Write-Host ": $(Get-Date)" -ForegroundColor White
-    Write-Host "   * Host / User    " -NoNewline -ForegroundColor DarkGray
-    Write-Host ": $env:COMPUTERNAME / $env:USERNAME" -ForegroundColor White
-    Write-Host "   * Network usage  " -NoNewline -ForegroundColor DarkGray
-    Write-Host ": read-only Modrinth hash lookup ONLY" -ForegroundColor Cyan
-    Write-Host "   * Execution mode " -NoNewline -ForegroundColor DarkGray
-    Write-Host ": 100% local, no remote code ever run" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "   Severity legend  : " -NoNewline -ForegroundColor DarkGray
-    Write-Host "[X] HIGH  " -NoNewline -ForegroundColor Red
-    Write-Host "[!] MEDIUM  " -NoNewline -ForegroundColor Yellow
-    Write-Host "[i] INFO" -ForegroundColor Gray
+    Write-DoubleBoxTop
+    Write-DoubleBoxLine
+    Write-DoubleBoxLine -Text "__     __ _    __  __ ____"      -Color Red    -Align Center
+    Write-DoubleBoxLine -Text "\ \   / // \  |  \/  |  _ \"     -Color Red    -Align Center
+    Write-DoubleBoxLine -Text " \ \ / // _ \ | |\/| | |_) |"    -Color Red    -Align Center
+    Write-DoubleBoxLine -Text "  \ V // ___ \| |  | |  __/"     -Color Red    -Align Center
+    Write-DoubleBoxLine -Text "   \_//_/   \_\_|  |_|_|"        -Color Red    -Align Center
+    Write-DoubleBoxLine
+    Write-DoubleBoxLine -Text "C H E A T   S C A N N E R" -Color White -Align Center
+    Write-DoubleBoxLine
+    Write-DoubleBoxDivider
+    Write-DoubleBoxLine -Text ("Version         : {0}" -f $script:Config.Version) -Color Gray
+    Write-DoubleBoxLine -Text ("Scan started     : {0}" -f (Get-Date)) -Color Gray
+    Write-DoubleBoxLine -Text ("Host / User      : {0} / {1}" -f $env:COMPUTERNAME, $env:USERNAME) -Color Gray
+    Write-DoubleBoxLine -Text ("Network usage    : read-only Modrinth hash lookup ONLY") -Color Cyan
+    Write-DoubleBoxLine -Text ("Execution mode   : 100% local, no remote code ever run") -Color Cyan
+    Write-DoubleBoxDivider
+    Write-DoubleBoxLine -Text ("Severity legend  :  [X] HIGH    [!] MEDIUM    [i] INFO") -Color Gray
+    Write-DoubleBoxDivider
+    $creditLine = ($script:Config.Credits | ForEach-Object { "$($_.Role): $($_.Name)" }) -join "   |   "
+    Write-DoubleBoxLine -Text $creditLine -Color DarkYellow -Align Center
+    Write-DoubleBoxBottom
     Write-Host ""
 }
 
 function Write-PhaseHeader {
     param([string]$Text, [ConsoleColor]$Color = 'Cyan')
-    $inner = 68
-    $label = " >> $Text"
-    $padded = $label.PadRight($inner)
+    $w = $script:UI.Width
+    $label = ">> $Text"
+    if ($label.Length -gt $w) { $label = $label.Substring(0, $w) }
+    $padded = $label.PadRight($w)
     Write-Host ""
-    Write-Host (" +" + ("-" * ($inner + 2)) + "+") -ForegroundColor $Color
-    Write-Host (" | $padded |") -ForegroundColor $Color
-    Write-Host (" +" + ("-" * ($inner + 2)) + "+") -ForegroundColor $Color
+    Write-Host ("  $($script:UI.tL)" + ($script:UI.h.ToString() * ($w + 2)) + "$($script:UI.tR)") -ForegroundColor $Color
+    Write-Host ("  $($script:UI.v) $padded $($script:UI.v)") -ForegroundColor $Color
+    Write-Host ("  $($script:UI.bL)" + ($script:UI.h.ToString() * ($w + 2)) + "$($script:UI.bR)") -ForegroundColor $Color
 }
 
 function Write-ProgressBar {
@@ -315,7 +355,6 @@ function Get-FileSHA1 {
 }
 
 function Get-ModrinthProject {
-
     param([string]$Hash)
     if (-not $Hash) { return $null }
     try {
@@ -529,18 +568,18 @@ function Invoke-BamParserPhase {
         return
     }
 
-    $allNames = $script:CheatClientNames + $script:MacroToolProcessNames
     $count = 0
     foreach ($userKey in $userKeys) {
         $props = Get-ItemProperty -Path $userKey.PSPath -ErrorAction SilentlyContinue
         if (-not $props) { continue }
-        $props.PSObject.Properties | Where-Object { $_.Name -match '^\\Device\\HarddiskVolume' } | ForEach-Object {
+        foreach ($prop in $props.PSObject.Properties) {
+            if ($prop.Name -notmatch '^\\Device\\HarddiskVolume') { continue }
             $count++
-            $exePath = $_.Name
+            $exePath = $prop.Name
             $matchedClient = $script:CheatClientNames | Where-Object { $exePath.ToLower() -like "*$($_.ToLower())*" }
             if ($matchedClient) {
                 Add-Finding "HIGH" "BamParser" ("Recently executed program matches known cheat-client name '{0}': {1}" -f $matchedClient[0], $exePath)
-                return
+                continue
             }
             $matchedMacro = $script:MacroToolProcessNames | Where-Object { $exePath.ToLower() -like "*$($_.ToLower())*" }
             if ($matchedMacro) {
@@ -689,13 +728,13 @@ function Write-SummaryReport {
         Write-Host "   [!] RESULT: $high HIGH severity, $med MEDIUM severity finding(s)." -ForegroundColor Red
         Write-Host ""
         if ($actionableFindings.Count -gt 0) {
-            $actionableFindings | Sort-Object Severity | Format-Table -AutoSize Severity, Module, Detail | Out-Host
+            $actionableFindings | Sort-Object Severity | Format-Table -Property Severity, Module, Detail -AutoSize | Out-Host
         }
     }
 
     if ($infoFindings.Count -gt 0) {
         Write-Host "   Informational notes (not counted in verdict):" -ForegroundColor DarkGray
-        $infoFindings | Format-Table -AutoSize Severity, Module, Detail | Out-Host
+        $infoFindings | Format-Table -Property Severity, Module, Detail -AutoSize | Out-Host
     }
 
     Write-Host ""
@@ -708,33 +747,26 @@ function Write-SummaryReport {
 
 function Write-VerdictBanner {
     param([bool]$Clean)
-    $width = 74
-    $line = "=" * $width
     $color = if ($Clean) { "Green" } else { "Red" }
-    $label = if ($Clean) { "V E R D I C T :   C L E A N" } else { "V E R D I C T :   C H E A T I N G   D E T E C T E D" }
+    $label = if ($Clean) { "V E R D I C T   :   C L E A N" } else { "V E R D I C T   :   C H E A T I N G   D E T E C T E D" }
 
+    $w = $script:UI.Width
     Write-Host ""
-    Write-Host " +$line+" -ForegroundColor $color
-    Write-Host (" |" + (" " * $width) + "|") -ForegroundColor $color
+    Write-Host ("  $($script:UI.TL)" + ($script:UI.H.ToString() * ($w + 2)) + "$($script:UI.TR)") -ForegroundColor $color
+    Write-Host ("  $($script:UI.V)" + (" " * ($w + 2)) + "$($script:UI.V)") -ForegroundColor $color
 
-    $innerWidth = $width - 4
-    $starLine = "*" * $innerWidth
-    Write-Host (" |  " + $starLine + "  |") -ForegroundColor $color
-    Write-Host (" |  *" + (" " * ($innerWidth - 2)) + "*  |") -ForegroundColor $color
+    $starLine = "*" * $w
+    Write-Host ("  $($script:UI.V) $starLine $($script:UI.V)") -ForegroundColor $color
 
-    $labelPadded = $label
-    $padTotal = $innerWidth - 2 - $labelPadded.Length
-    $padLeft = [math]::Floor($padTotal / 2)
-    $padRight = $padTotal - $padLeft
-    if ($padLeft -lt 0) { $padLeft = 0 }
-    if ($padRight -lt 0) { $padRight = 0 }
-    $centeredLabel = (" " * $padLeft) + $labelPadded + (" " * $padRight)
-    Write-Host (" |  *" + $centeredLabel + "*  |") -ForegroundColor $color
+    $padTotal = $w - $label.Length
+    $padLeft = [math]::Max(0, [math]::Floor($padTotal / 2))
+    $padRight = [math]::Max(0, $padTotal - $padLeft)
+    $centeredLabel = (" " * $padLeft) + $label + (" " * $padRight)
+    Write-Host ("  $($script:UI.V) $centeredLabel $($script:UI.V)") -ForegroundColor $color
 
-    Write-Host (" |  *" + (" " * ($innerWidth - 2)) + "*  |") -ForegroundColor $color
-    Write-Host (" |  " + $starLine + "  |") -ForegroundColor $color
-    Write-Host (" |" + (" " * $width) + "|") -ForegroundColor $color
-    Write-Host " +$line+" -ForegroundColor $color
+    Write-Host ("  $($script:UI.V) $starLine $($script:UI.V)") -ForegroundColor $color
+    Write-Host ("  $($script:UI.V)" + (" " * ($w + 2)) + "$($script:UI.V)") -ForegroundColor $color
+    Write-Host ("  $($script:UI.BL)" + ($script:UI.H.ToString() * ($w + 2)) + "$($script:UI.BR)") -ForegroundColor $color
 }
 
 function Write-OverallSummary {
@@ -800,6 +832,25 @@ function Write-OverallSummary {
     Write-Host ""
 }
 
+function Write-CreditsFooter {
+    $w = $script:UI.Width
+    Write-Host ""
+    Write-Host ("  $($script:UI.tL)" + ($script:UI.h.ToString() * ($w + 2)) + "$($script:UI.tR)") -ForegroundColor DarkYellow
+    $title = "CREDITS"
+    $padTotal = $w - $title.Length
+    $padL = [math]::Floor($padTotal / 2); $padR = $padTotal - $padL
+    Write-Host ("  $($script:UI.v) " + (" " * $padL) + $title + (" " * $padR) + " $($script:UI.v)") -ForegroundColor DarkYellow
+    Write-Host ("  $($script:UI.tL)" + ($script:UI.h.ToString() * ($w + 2)) + "$($script:UI.tR)".Replace($script:UI.tL,$script:UI.ML).Replace($script:UI.tR,$script:UI.MR)) -ForegroundColor DarkYellow
+    foreach ($c in $script:Config.Credits) {
+        $line = ("{0,-14} : {1}" -f $c.Role, $c.Name)
+        $pad = $w - $line.Length
+        if ($pad -lt 0) { $pad = 0 }
+        Write-Host ("  $($script:UI.v) $line" + (" " * $pad) + " $($script:UI.v)") -ForegroundColor Yellow
+    }
+    Write-Host ("  $($script:UI.bL)" + ($script:UI.h.ToString() * ($w + 2)) + "$($script:UI.bR)") -ForegroundColor DarkYellow
+    Write-Host ""
+}
+
 function Export-JsonReport {
     param($Verified, $Unknown, $Threats)
     $path = Join-Path $env:USERPROFILE "Desktop\VampCheatScanner-Report-$(Get-Date -Format 'yyyyMMdd-HHmmss').json"
@@ -810,6 +861,7 @@ function Export-JsonReport {
         Unknown   = $Unknown
         JarThreats = $Threats
         SystemFindings = $script:Findings
+        Credits   = $script:Config.Credits
     }
     try {
         $report | ConvertTo-Json -Depth 10 | Out-File -FilePath $path -Encoding UTF8
@@ -840,11 +892,13 @@ function Main {
         Export-JsonReport -Verified $p1.Verified -Unknown $p1.Unknown -Threats $threats
     }
 
+    Write-CreditsFooter
+
     Write-Host "   Scan Completed. Please review the verdict above and take appropriate action." -ForegroundColor Cyan
     Write-Host "   Thank you for using Vamp Cheat Scanner. Stay safe and don't cheat!" -ForegroundColor Cyan
 
-
-    Write-Host "Please press any key to exit this scan..." -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "   Press any key to exit this scan..." -ForegroundColor DarkGray
     $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 }
 
