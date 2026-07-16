@@ -635,25 +635,6 @@ function Get-FileSHA1 {
 
     Write-Host "" -ForegroundColor Gray
     Write-Host ("   Verified mods: {0}    Unknown mods: {1}    Threats: {2}" -f ($Verified.Count -as [int]), ($Unknown.Count -as [int]), ($Threats.Count -as [int])) -ForegroundColor Cyan
-            Write-Host ("   {0,7}: {1}" -f $sev, $count) -ForegroundColor $color
-        }
-
-        Write-Host "" -ForegroundColor Gray
-        Write-Host "   Findings by module:" -ForegroundColor Gray
-        $byModule = $all | Group-Object -Property Module | Sort-Object Count -Descending
-        foreach ($m in $byModule) {
-            Write-Host ("     - {0}: {1}" -f $m.Name, $m.Count) -ForegroundColor DarkGray
-        }
-
-        Write-Host "" -ForegroundColor Gray
-        Write-Host "   Detailed findings (most recent first):" -ForegroundColor Gray
-        foreach ($f in ($all | Sort-Object -Property Time -Descending)) {
-            $t = if ($f.Time) { $f.Time.ToString('yyyy-MM-dd HH:mm:ss') } else { 'n/a' }
-            $sevColor = switch ($f.Severity) { 'HIGH' { 'Red' } 'MEDIUM' { 'Yellow' } default { 'Gray' } }
-            Write-Host ("     [{0}] {1} - {2} ({3})" -f $t, $f.Severity, $f.Detail, $f.Module) -ForegroundColor $sevColor
-        }
-    }
-
     Write-Host "" -ForegroundColor Gray
     Write-Host ("   Verified mods: {0}    Unknown mods: {1}    Threats: {2}" -f ($Verified.Count -as [int]), ($Unknown.Count -as [int]), ($Threats.Count -as [int])) -ForegroundColor Cyan
 }
