@@ -198,7 +198,7 @@ function Get-SignatureRisk {
 $script:MemorySearchTerms = @(
     "Autototem", "Auto crystal", "Cw crystal", "Anchor macro", "Anchormacro",
     "Auto anchor", "TriggerBot", "AutoDhand", "SlientAim", "AutoInventoryTotem",
-    "aimassist", "AutoCrystal", "prestige", "argon", "stop_cracking", "self de"
+    "aimassist", "AutoCrystal", "prestige", "argon", "stop_cracking", "self de", "delay"
 )
 $script:MemoryMinStringLength = 4
 
