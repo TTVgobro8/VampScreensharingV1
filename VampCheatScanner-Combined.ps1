@@ -99,7 +99,7 @@ $script:CheatFeatureWords = @(
     "InventoryTotem", "LegitTotem", "AutoPot", "AutoArmor",
     "AutoDoubleHand", "JumpReset", "PingSpoof", "SelfDestruct",
     "ShieldBreaker", "WebMacro", "AxeSpam", "ChestStealer", "Xray",
-    "Nuker", "Freecam", "Fly", "Speed", "Velocity", "ESP", "Hitboxes"
+    "Nuker", "Freecam", "Fly", "Speed", "Velocity", "ESP", "Hitboxes", "Delay"
 )
 $script:AmbiguousFeatureWords = @("Fly", "Speed", "Velocity", "ESP", "Reach", "Freecam", "Hitboxes")
 
